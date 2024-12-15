@@ -1,0 +1,209 @@
+use crate::tokens::{Token, LexicalError};
+use crate::ast;
+
+grammar(counter: &mut usize);
+
+extern {
+    type Location = usize;
+    type Error = LexicalError;
+
+    enum Token {
+        "identifier" => Token::Identifier(<String>),
+        "int_literal" => Token::IntLiteral(<i64>),
+        "float_literal" => Token::FloatLiteral(<f64>),
+        "string_literal" => Token::StringLiteral(<String>),
+        "bool_literal" => Token::BoolLiteral(<bool>),
+        "int" => Token::KeywordInt,
+        "float" => Token::KeywordFloat,
+        "string" => Token::KeywordString,
+        "bool" => Token::KeywordBool,
+        "let" => Token::KeywordVar,
+        "print" => Token::KeywordPrint,
+        "fn" => Token::KeywordFn,
+        "if" => Token::KeywordIf,
+        "else" => Token::KeywordElse,
+        "->" => Token::KeywordArrow,
+        "=" => Token::Assign,
+        ";" => Token::Semicolon,
+        ":" => Token::Colon,
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "{" => Token::LBrace,
+        "}" => Token::RBrace,
+        "," => Token::Comma,
+        "+" => Token::OperatorAdd,
+        "-" => Token::OperatorSub,
+        "*" => Token::OperatorMul,
+        "/" => Token::OperatorDiv,
+        "==" => Token::OperatorEq,
+        "!=" => Token::OperatorNeq,
+        "<" => Token::OperatorLt,
+        "<=" => Token::OperatorLe,
+        ">" => Token::OperatorGt,
+        ">=" => Token::OperatorGe,
+        "&&" => Token::OperatorAnd,
+        "||" => Token::OperatorOr,
+        "|" => Token::Pipe,
+    }
+}
+
+
+pub Script: Vec<ast::Expression> = {
+    <items:TopLevelItem*> => items
+}
+
+TopLevelItem: ast::Expression = {
+    FunctionDefinition,
+    Expression,
+}
+
+FunctionDefinition: ast::Expression = {
+    "fn" <name:"identifier"> "(" <args:Comma<TypedArg>?> ")" <return_type:("->" Type)?> <body:Block> => {
+        ast::Expression::FunctionDefinition {
+            name,
+            args: args.unwrap_or_else(Vec::new),
+            return_type: match return_type {
+                Some(t) => t.1,
+                None => ast::Type::Unit,
+            },
+            body: Box::new(body)
+        }
+    }
+}
+
+pub Expression: ast::Expression = {
+    #[precedence(level="0")]
+    Term,
+    Block,
+    IfExpression,
+
+    // how to add this aaaaaaaaaaaaaaa
+    // "-" <e:Expression> => ast::Expression::BinaryOperation {
+    //     lhs: Box::new(ast::Expression::Value(ast::AstValue::Integer(0))),
+    //     operator: ast::Operator::Sub,
+    //     rhs: Box::new(e),
+    // },
+
+    #[precedence(level="3")] #[assoc(side="left")]
+    <left:Expression> "*" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Mul, rhs: Box::new(right)},
+    <left:Expression> "/" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Div, rhs: Box::new(right)},
+
+    #[precedence(level="4")] #[assoc(side="left")]
+    <left:Expression> "+" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Add, rhs: Box::new(right)},
+    <left:Expression> "-" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Sub, rhs: Box::new(right)},
+
+    #[precedence(level="5")] #[assoc(side="left")]
+    <left:Expression> "==" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Eq, rhs: Box::new(right)},
+    <left:Expression> "!=" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Neq, rhs: Box::new(right)},
+    <left:Expression> "<" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Lt, rhs: Box::new(right)},
+    <left:Expression> "<=" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Le, rhs: Box::new(right)},
+    <left:Expression> ">" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Gt, rhs: Box::new(right)},
+    <left:Expression> ">=" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Ge, rhs: Box::new(right)},
+
+    #[precedence(level="6")] #[assoc(side="left")]
+    <left:Expression> "&&" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::And, rhs: Box::new(right)},
+    <left:Expression> "||" <right:Expression> => ast::Expression::BinaryOperation{lhs: Box::new(left), operator: ast::Operator::Or, rhs: Box::new(right)},
+
+    #[precedence(level="7")] #[assoc(side="right")]
+    "let" <name:"identifier"> "=" <e:Expression> => ast::Expression::VariableAssignment{ name, value: Box::new(e) },
+
+    #[precedence(level="8")]
+    <e:Expression> ";" => ast::Expression::Discard{value: Box::new(e)},
+    "print" "(" <e:Expression> ")" => ast::Expression::Print{value: Box::new(e)},
+    // ^ we can also handle it differently, with Function and NativeFunction in expressions
+}
+
+IfExpression: ast::Expression = {
+    "if" <condition:Expression> <then_branch:Block> <else_branch:ElseBranch?> => {
+        ast::Expression::IfElse{ 
+            condition: Box::new(condition), 
+            then_branch: Box::new(then_branch), 
+            else_branch: else_branch.map(Box::new)
+        }
+    },
+}
+
+ElseBranch: ast::Expression = {
+    "else" <Block>,
+    "else" <IfExpression>,
+}
+
+Term: ast::Expression = {
+    <val:"int_literal"> => {
+        ast::Expression::Value(ast::AstValue::Integer(val))
+    },
+    <val:"float_literal"> => {
+        ast::Expression::Value(ast::AstValue::Float(val))
+    },
+    <val:"string_literal"> => {
+        ast::Expression::Value(ast::AstValue::String(val))
+    },
+    <b:"bool_literal"> => ast::Expression::Value(ast::AstValue::Boolean(b)),
+
+    // variable
+    <name:"identifier"> => {
+        ast::Expression::Variable(name)
+    },
+
+    // calling a function
+    <name:"identifier"> "(" <args:Comma<Expression>?> ")" => {
+        ast::Expression::FunctionCall{
+            name,
+            args: args.unwrap_or_else(Vec::new)
+        }
+    },
+
+    // "|" <args:Comma<TypedArg>?> "|" <body:Block> => {
+    //     ast::Expression::Lambda {
+    //         args: args.unwrap_or_else(Vec::new),
+    //         body: Box::new(body),
+    //         return_type: None,  
+    //     }
+    // },
+    
+    // lambda with return type, implicit will do later
+    "|" <args:Comma<TypedArg>> "|" "->" <return_type:Type> <body:Block> => {
+        let id = *counter;
+        *counter += 1;
+        ast::Expression::Lambda {
+            id,
+            args,
+            body: Box::new(body),
+            return_type
+        }
+    },
+}
+
+Block: ast::Expression = {
+    "{" <exprs:Expression*> "}" => ast::Expression::Block{expressions: exprs}
+}
+
+
+Comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T> => {
+        let mut v = v;
+        v.push(e);
+        v
+    }
+};
+
+TypedArg: ast::TypedArg = {
+    <name:"identifier"> ":" <t:Type> => ast::TypedArg { name, t }
+}
+
+Type: ast::Type = {
+    "int" => ast::Type::Integer,
+    "float" => ast::Type::Float,
+    "string" => ast::Type::String,
+    "bool" => ast::Type::Boolean,
+    // "()" => ast::Type::Unit,
+    "fn" "(" <args:Comma<Type>?> ")" <return_type:("->" Type)?>  => {
+        ast::Type::Function{
+            args: args.unwrap_or_else(Vec::new),
+            return_type: Box::new(match return_type {
+                Some(t) => t.1,
+                None => ast::Type::Unit,
+            })
+        }
+    },
+}
