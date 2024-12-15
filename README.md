@@ -38,3 +38,9 @@ You can also build and run directly:
 cargo run -- <my-script-file.nl>
 ```
 
+
+# footnote
+File with most language features:
+https://github.com/structwafel/public-newlang/blob/main/files/example_two.nl
+
+`./files` contains some small programs, not all are supposed to work
