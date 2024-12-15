@@ -40,7 +40,7 @@ impl VM {
     }
 
     pub fn execute(&mut self, instructions: &[StackIR]) -> Option<StackValue> {
-        println!("Starting program execution");
+        // println!("Starting program execution");
         self.instruction_pointer = 0;
 
         while self.instruction_pointer < instructions.len() {
